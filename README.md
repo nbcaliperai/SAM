@@ -20,8 +20,8 @@ This is a minimal web application for interactive image segmentation using the S
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/sam2-browser-segmentation.git
-cd sam2-browser-segmentation
+git clone https://github.com/nbcaliperai/SAM.git
+cd SAM
 ```
 
 2. Install dependencies
