@@ -1,6 +1,6 @@
+// @ts-nocheck
 import * as ort from 'onnxruntime-web';
 
-// Model URLs (replace with actual URLs when available)
 const ENCODER_MODEL_URL = 'https://storage.googleapis.com/lb-artifacts-testing-public/sam2/sam2_hiera_tiny.encoder.ort';
 const DECODER_MODEL_URL = 'https://storage.googleapis.com/lb-artifacts-testing-public/sam2/sam2_hiera_tiny.decoder.onnx';
 
@@ -56,18 +56,17 @@ class SAM2Segmenter {
 
     async initialize() {
         try {
-            console.log('Loading encoder model...');
+            console.log('Loading encoder from:', ENCODER_MODEL_URL);
             this.encoder = await ort.InferenceSession.create(ENCODER_MODEL_URL);
-            console.log('Encoder model loaded successfully');
-
-            console.log('Loading decoder model...');
+            console.log('Encoder loaded successfully');
+            console.log('Loading decoder from:', DECODER_MODEL_URL);
             this.predictor = await ort.InferenceSession.create(DECODER_MODEL_URL);
-            console.log('Decoder model loaded successfully');
-            
+            console.log('Decoder loaded successfully');
             this.isInitialized = true;
             return true;
         } catch (error) {
             console.error('Error initializing models:', error);
+            console.error('Error details:', error.message, error.code);
             throw error;
         }
     }
@@ -264,7 +263,7 @@ class ImageSegmentationApp {
             // Encode image
             this.embedding = await this.segmenter.encode(this.image);
 
-            this.updateStatus('Ready! Click on the image to segment.', 'ready');
+            this.updateStatus('Ready! Click on the image to segment. Right-click for negative points.', 'ready');
             this.exportMaskBtn.disabled = false;
 
         } catch (error) {
@@ -273,12 +272,67 @@ class ImageSegmentationApp {
         }
     }
 
+    // Helper method to check if a click is near an existing point
+    findPointAtPosition(x, y, tolerance = 15) {
+        for (let i = 0; i < this.points.length; i++) {
+            // Convert normalized coordinates back to canvas coordinates
+            const canvasX = (this.points[i][0] / 1024) * this.sourceCanvas.width;
+            const canvasY = (this.points[i][1] / 1024) * this.sourceCanvas.height;
+            
+            const distance = Math.sqrt(Math.pow(x - canvasX, 2) + Math.pow(y - canvasY, 2));
+            if (distance <= tolerance) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     async handleCanvasClick(e, isNegative = false) {
         if (!this.image || !this.embedding) return;
 
         const rect = this.sourceCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+
+        // Check if we're clicking on an existing point
+        const existingPointIndex = this.findPointAtPosition(x, y);
+        
+        if (existingPointIndex !== -1) {
+            // Remove the existing point
+            this.points.splice(existingPointIndex, 1);
+            this.labels.splice(existingPointIndex, 1);
+            
+            this.updateStatus('Point removed. Processing segmentation...', 'loading');
+            
+            // If we have remaining points, re-run prediction
+            if (this.points.length > 0) {
+                try {
+                    const results = await this.segmenter.predict(this.embedding, this.points, this.labels);
+                    const maskTensor = results.masks;
+                    const maskData = maskTensor.data;
+                    
+                    const resizedMask = MaskProcessor.resizeMask(
+                        maskData,
+                        256, 256,
+                        this.sourceCanvas.width,
+                        this.sourceCanvas.height
+                    );
+
+                    this.currentMask = resizedMask;
+                    this.redrawCanvas();
+                    this.updateStatus(`Point removed. Remaining points: ${this.points.length}`, 'ready');
+                } catch (error) {
+                    this.updateStatus('Segmentation error: ' + error.message, 'error');
+                    console.error('Segmentation error:', error);
+                }
+            } else {
+                // No points left, clear mask
+                this.currentMask = null;
+                this.redrawCanvas();
+                this.updateStatus('All points removed. Click to add new points.', 'ready');
+            }
+            return;
+        }
 
         // Convert canvas coordinates to original image coordinates
         const scaleX = this.image.width / this.sourceCanvas.width;
@@ -318,7 +372,7 @@ class ImageSegmentationApp {
             // Redraw everything
             this.redrawCanvas();
 
-            this.updateStatus(`Segmentation complete! Points: ${this.points.length}`, 'ready');
+            this.updateStatus(`Segmentation complete! Points: ${this.points.length} (Click on existing points to remove them)`, 'ready');
 
         } catch (error) {
             this.updateStatus('Segmentation error: ' + error.message, 'error');
@@ -373,6 +427,11 @@ class ImageSegmentationApp {
         this.sourceCtx.beginPath();
         this.sourceCtx.arc(x, y, 6, 0, 2 * Math.PI);
         this.sourceCtx.fill();
+        this.sourceCtx.stroke();
+        
+        // Add a small border to make points more visible and clickable
+        this.sourceCtx.strokeStyle = '#000000';
+        this.sourceCtx.lineWidth = 1;
         this.sourceCtx.stroke();
     }
 

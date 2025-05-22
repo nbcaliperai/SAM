@@ -13,7 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "onnxruntime-web": "^1.17.1",
+    "onnxruntime-web": "^1.22.0",
     "vite": "^5.0.0"
   }
 }
