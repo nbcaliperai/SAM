@@ -199,8 +199,12 @@ class ImageSegmentationApp {
 
     async initialize() {
         try {
+            this.imageInput.disabled = true;
+            this.exportMaskBtn.disabled = true;
+            this.updateStatus('Loading models...', 'loading');
             await this.segmenter.initialize();
             this.updateStatus('Models loaded successfully! Upload an image to start.', 'ready');
+            this.imageInput.disabled = false;
         } catch (error) {
             this.updateStatus('Error loading models: ' + error.message, 'error');
             console.error('Initialization error:', error);
